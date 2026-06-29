@@ -1,7 +1,9 @@
 #!/bin/bash
-# Setup WeChat1.app + WeChat2.app and register a launchd sync agent.
-# Both managed copies get distinct bundle IDs so neither collides with the
-# system /Applications/WeChat.app under LaunchServices.
+# One-click installer for WeChat dual-instance on macOS.
+# - Auto-quits running WeChat (with countdown, Ctrl-C aborts)
+# - Builds two managed copies with distinct bundle IDs (WeChat + 微信2)
+# - Registers a background sync agent (mirrors App Store upgrades)
+# - Registers a login auto-launch agent (starts both instances at login)
 set -euo pipefail
 
 SYSTEM_SOURCE="/Applications/WeChat.app"
@@ -10,40 +12,25 @@ ORIGINAL="$MANAGED_DIR/WeChat.app"
 CLONE="$MANAGED_DIR/WeChat2.app"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPDATER_SCRIPT="$SCRIPT_DIR/wechat-auto-update.sh"
-PLIST_TEMPLATE="$SCRIPT_DIR/com.sillusion.wechat-dual-instance-updater.plist.template"
+SANDBOX_SCRIPT="$SCRIPT_DIR/wechat-sandbox.sh"
+UPDATER_TEMPLATE="$SCRIPT_DIR/com.sillusion.wechat-dual-instance-updater.plist.template"
+AUTOLAUNCH_TEMPLATE="$SCRIPT_DIR/com.sillusion.wechat-dual-instance-autolaunch.plist.template"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-LAUNCH_AGENT="$LAUNCH_AGENTS_DIR/com.sillusion.wechat-dual-instance-updater.plist"
+UPDATER_AGENT="$LAUNCH_AGENTS_DIR/com.sillusion.wechat-dual-instance-updater.plist"
+AUTOLAUNCH_AGENT="$LAUNCH_AGENTS_DIR/com.sillusion.wechat-dual-instance-autolaunch.plist"
 STATE_DIR="$HOME/.wechat-dual-instance"
 LOG_DIR="$STATE_DIR/logs"
 
-ORIG_PLIST="$ORIGINAL/Contents/Info.plist"
-CLONE_PLIST="$CLONE/Contents/Info.plist"
-
 SKIP_AGENT_SETUP=0
-if [ "${1:-}" = "--skip-agent" ]; then
-    SKIP_AGENT_SETUP=1
-fi
-
-version_ge() {
-    awk -v a="$1" -v b="$2" '
-        function normalize(v, parts, count, i) {
-            count = split(v, parts, ".")
-            for (i = count + 1; i <= 4; i++) {
-                parts[i] = 0
-            }
-            return parts[1] " " parts[2] " " parts[3] " " parts[4]
-        }
-        BEGIN {
-            split(normalize(a), aa, " ")
-            split(normalize(b), bb, " ")
-            for (i = 1; i <= 4; i++) {
-                if ((aa[i] + 0) > (bb[i] + 0)) exit 0
-                if ((aa[i] + 0) < (bb[i] + 0)) exit 1
-            }
-            exit 0
-        }
-    '
-}
+SKIP_AUTOQUIT=0
+NO_AUTOSTART=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-agent)   SKIP_AGENT_SETUP=1 ;;
+        --skip-autoquit) SKIP_AUTOQUIT=1 ;;
+        --no-autostart) NO_AUTOSTART=1 ;;
+    esac
+done
 
 get_version() {
     local app_path="$1"
@@ -75,73 +62,108 @@ patch_bundle() {
     codesign --force --deep -s - "$bundle" 2>/dev/null
 }
 
+render_plist() {
+    # Substitute __SCRIPT_PATH__ and __LOG_PATH__ in a plist template.
+    # Args: template_path  output_path  script_path  log_path
+    python3 - "$1" "$2" "$3" "$4" <<'PY'
+from pathlib import Path
+import sys
+src = Path(sys.argv[1]).read_text()
+src = src.replace("__SCRIPT_PATH__", sys.argv[3])
+src = src.replace("__LOG_PATH__",    sys.argv[4])
+Path(sys.argv[2]).write_text(src)
+PY
+}
+
+# --- preflight ----------------------------------------------------------------
 if [ ! -d "$SYSTEM_SOURCE" ]; then
-    echo "ERROR: $SYSTEM_SOURCE not found. Install WeChat from the App Store or official DMG first."
+    echo "ERROR: $SYSTEM_SOURCE 不存在。请先从 App Store 或微信官网安装 WeChat 4.x。"
     exit 1
 fi
 
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR" "$MANAGED_DIR"
-chmod +x "$UPDATER_SCRIPT"
+chmod +x "$UPDATER_SCRIPT" "$SANDBOX_SCRIPT"
 
-echo "=== WeChat Dual-Instance Installer ==="
+echo "=== WeChat Dual-Instance Installer (one-click) ==="
 echo
 
-SYSTEM_VERSION="$(get_version "$SYSTEM_SOURCE")"
-MANAGED_VERSION="$(get_version "$ORIGINAL")"
+# --- auto-quit running WeChat -------------------------------------------------
+RUNNING=()
+for name in WeChat WeChat1 WeChat2; do
+    if pgrep -x "$name" >/dev/null 2>&1; then
+        RUNNING+=("$name")
+    fi
+done
 
-# Always rebuild both managed copies from the virgin system bundle so we
-# never carry forward stale patches or signatures from a previous install.
+if [ "${#RUNNING[@]}" -gt 0 ] && [ "$SKIP_AUTOQUIT" -eq 0 ]; then
+    echo ">>> 检测到运行中的微信进程: ${RUNNING[*]}"
+    echo ">>> 10 秒后将强制退出。按 Ctrl-C 中止安装。"
+    for i in 10 9 8 7 6 5 4 3 2 1; do
+        printf "\r    倒计时: %2d 秒 " "$i"
+        sleep 1
+    done
+    printf "\r    正在退出微信...        \n"
+    osascript -e 'tell application "WeChat" to quit' >/dev/null 2>&1 || true
+    sleep 2
+    pkill -TERM -x WeChat WeChat1 WeChat2 >/dev/null 2>&1 || true
+    sleep 2
+    pkill -9 -x WeChat WeChat1 WeChat2 >/dev/null 2>&1 || true
+    sleep 1
+fi
+
+# --- rebuild managed copies from virgin system bundle -------------------------
+SYSTEM_VERSION="$(get_version "$SYSTEM_SOURCE")"
+
 if [ -d "$ORIGINAL" ]; then
-    echo ">>> Removing existing $ORIGINAL ..."
+    echo ">>> 删除旧的 $ORIGINAL ..."
     rm -rf "$ORIGINAL"
 fi
 if [ -d "$CLONE" ]; then
-    echo ">>> Removing existing $CLONE ..."
+    echo ">>> 删除旧的 $CLONE ..."
     rm -rf "$CLONE"
 fi
 
-echo ">>> Copying $SYSTEM_SOURCE → $ORIGINAL  (~30s) ..."
+echo ">>> 复制 $SYSTEM_SOURCE → $ORIGINAL  (约 30 秒)..."
 cp -R "$SYSTEM_SOURCE" "$ORIGINAL"
 
-echo ">>> Copying $SYSTEM_SOURCE → $CLONE     (~30s) ..."
+echo ">>> 复制 $SYSTEM_SOURCE → $CLONE     (约 30 秒)..."
 cp -R "$SYSTEM_SOURCE" "$CLONE"
 
-echo ">>> Patching $ORIGINAL → com.tencent.xinWeChat1 / WeChat1 ..."
-patch_bundle "$ORIGINAL" "com.tencent.xinWeChat1" "WeChat1" "WeChat1"
+echo ">>> Patch 实例 1 → bundle=com.tencent.xinWeChat1 / exec=WeChat1 / 显示名=WeChat ..."
+patch_bundle "$ORIGINAL" "com.tencent.xinWeChat1" "WeChat1" "WeChat"
 
-echo ">>> Patching $CLONE    → com.tencent.xinWeChat2 / WeChat2 ..."
-patch_bundle "$CLONE"    "com.tencent.xinWeChat2" "WeChat2" "WeChat2"
+echo ">>> Patch 实例 2 → bundle=com.tencent.xinWeChat2 / exec=WeChat2 / 显示名=微信2 ..."
+patch_bundle "$CLONE"    "com.tencent.xinWeChat2" "WeChat2" "微信2"
 
+# --- register background sync agent -------------------------------------------
 if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
-    echo ">>> Installing background sync agent ..."
-    python3 - "$PLIST_TEMPLATE" "$LAUNCH_AGENT" "$UPDATER_SCRIPT" "$LOG_DIR/launchd.log" <<'PY'
-from pathlib import Path
-import sys
-
-template_path = Path(sys.argv[1])
-output_path = Path(sys.argv[2])
-script_path = sys.argv[3]
-log_path = sys.argv[4]
-
-content = template_path.read_text()
-content = content.replace("__SCRIPT_PATH__", script_path)
-content = content.replace("__LOG_PATH__", log_path)
-output_path.write_text(content)
-PY
-
-    launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
-    launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT"
+    echo ">>> 安装后台同步代理 (com.sillusion.wechat-dual-instance-updater) ..."
+    render_plist "$UPDATER_TEMPLATE" "$UPDATER_AGENT" "$UPDATER_SCRIPT" "$LOG_DIR/launchd.log"
+    launchctl bootout "gui/$(id -u)" "$UPDATER_AGENT" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "$UPDATER_AGENT"
     launchctl kickstart "gui/$(id -u)/com.sillusion.wechat-dual-instance-updater" >/dev/null 2>&1 || true
 fi
 
-echo
-echo "=== Done ==="
-echo "System (untouched):   $SYSTEM_SOURCE  ($SYSTEM_VERSION, com.tencent.xinWeChat)"
-echo "Managed instance 1:   $ORIGINAL  ($(get_version "$ORIGINAL"), com.tencent.xinWeChat1)"
-echo "Managed instance 2:   $CLONE     ($(get_version "$CLONE"), com.tencent.xinWeChat2)"
-if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
-    echo "LaunchAgent:          $LAUNCH_AGENT"
+# --- register login auto-launch agent -----------------------------------------
+if [ "$NO_AUTOSTART" -eq 0 ] && [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
+    echo ">>> 安装开机自启代理 (com.sillusion.wechat-dual-instance-autolaunch) ..."
+    render_plist "$AUTOLAUNCH_TEMPLATE" "$AUTOLAUNCH_AGENT" "$SANDBOX_SCRIPT" "$LOG_DIR/autolaunch.log"
+    launchctl bootout "gui/$(id -u)" "$AUTOLAUNCH_AGENT" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "$AUTOLAUNCH_AGENT"
 fi
-echo "Sync log:             $LOG_DIR/update.log"
+
+# --- done ---------------------------------------------------------------------
 echo
-echo "Now run:  bash $SCRIPT_DIR/wechat-sandbox.sh"
+echo "=============== 部署完成 ==============="
+echo "系统微信 (未改动):  $SYSTEM_SOURCE  ($SYSTEM_VERSION, com.tencent.xinWeChat)"
+echo "实例 1 (主):       $ORIGINAL  ($(get_version "$ORIGINAL"), com.tencent.xinWeChat1, 显示名 WeChat)"
+echo "实例 2 (副):       $CLONE     ($(get_version "$CLONE"), com.tencent.xinWeChat2, 显示名 微信2)"
+if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
+    echo "同步代理:          $UPDATER_AGENT"
+    if [ "$NO_AUTOSTART" -eq 0 ]; then
+        echo "自启代理:          $AUTOLAUNCH_AGENT (下次登录会自动启动双开)"
+    fi
+fi
+echo "日志目录:          $LOG_DIR/"
+echo
+echo "现在立即启动:  bash $SANDBOX_SCRIPT"

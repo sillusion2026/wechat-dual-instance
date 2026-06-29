@@ -1,5 +1,5 @@
 #!/bin/bash
-# Remove the cloned WeChat, updater agent, and associated data.
+# Remove all dual-instance artifacts: managed apps, containers, agents, state.
 set -euo pipefail
 
 MANAGED_DIR="$HOME/Applications"
@@ -8,14 +8,19 @@ CLONE="$MANAGED_DIR/WeChat2.app"
 CONTAINER1="$HOME/Library/Containers/com.tencent.xinWeChat1"
 CONTAINER2="$HOME/Library/Containers/com.tencent.xinWeChat2"
 STATE_DIR="$HOME/.wechat-dual-instance"
-LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.sillusion.wechat-dual-instance-updater.plist"
+UPDATER_AGENT="$HOME/Library/LaunchAgents/com.sillusion.wechat-dual-instance-updater.plist"
+AUTOLAUNCH_AGENT="$HOME/Library/LaunchAgents/com.sillusion.wechat-dual-instance-autolaunch.plist"
 
 echo "=== WeChat Dual-Instance Uninstaller ==="
 echo
 
-echo ">>> Unloading background updater ..."
-launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
-rm -f "$LAUNCH_AGENT"
+echo ">>> 退出运行中的管理实例 ..."
+pkill -x WeChat1 WeChat2 >/dev/null 2>&1 || true
+
+echo ">>> 卸载 launchd 代理 ..."
+launchctl bootout "gui/$(id -u)" "$UPDATER_AGENT"    >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)" "$AUTOLAUNCH_AGENT" >/dev/null 2>&1 || true
+rm -f "$UPDATER_AGENT" "$AUTOLAUNCH_AGENT"
 
 if [ -d "$CLONE" ]; then
     echo ">>> Removing $CLONE ..."
