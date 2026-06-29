@@ -39,6 +39,15 @@ launchctl bootout "gui/$(id -u)" "$UPDATER_AGENT"    >/dev/null 2>&1 || true
 launchctl bootout "gui/$(id -u)" "$AUTOLAUNCH_AGENT" >/dev/null 2>&1 || true
 rm -f "$UPDATER_AGENT" "$AUTOLAUNCH_AGENT"
 
+echo ">>> 移出系统登录项 ..."
+osascript -e "
+  tell application \"System Events\"
+    try
+      delete (every login item whose path is \"$SANDBOX\")
+    end try
+  end tell" >/dev/null 2>&1 || true
+echo "    完成。"
+
 if [ -d "$SANDBOX" ]; then
     echo ">>> 删除 $SANDBOX ..."
     rm -rf "$SANDBOX"

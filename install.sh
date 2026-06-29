@@ -140,12 +140,27 @@ if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
     launchctl kickstart "gui/$(id -u)/com.sillusion.wechat-dual-instance-updater" >/dev/null 2>&1 || true
 fi
 
-# --- register login auto-launch agent -----------------------------------------
+# --- register login auto-launch (launchd agent + System Settings login item) ---
 if [ "$NO_AUTOSTART" -eq 0 ] && [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
-    echo ">>> 安装开机自启代理 (com.sillusion.wechat-dual-instance-autolaunch) ..."
+    echo ">>> 安装开机自启代理 (launchd) ..."
     render_plist "$AUTOLAUNCH_TEMPLATE" "$AUTOLAUNCH_AGENT" "$SANDBOX_SCRIPT" "$LOG_DIR/autolaunch.log"
     launchctl bootout "gui/$(id -u)" "$AUTOLAUNCH_AGENT" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "$AUTOLAUNCH_AGENT"
+
+    echo ">>> 注册到系统登录项 (System Settings → 登录项与扩展) ..."
+    # Remove any previous entry first to avoid duplicates.
+    osascript -e "
+      tell application \"System Events\"
+        try
+          delete (every login item whose path is \"$SANDBOX\")
+        end try
+      end tell" >/dev/null 2>&1 || true
+    osascript -e "
+      tell application \"System Events\"
+        make login item at end with properties {path:\"$SANDBOX\", hidden:false}
+      end tell" 2>/dev/null && \
+        echo "    已添加到系统登录项。" || \
+        echo "    ⚠️  添加登录项失败（可能需要在 系统设置 → 隐私与安全性 → 自动化 里允许终端控制 System Events）。launchd 自启代理仍在生效，不影响开机自启。"
 fi
 
 # --- done ---------------------------------------------------------------------
