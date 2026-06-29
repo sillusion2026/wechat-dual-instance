@@ -1,22 +1,15 @@
 #!/bin/bash
-# WeChat 4.x dual-instance launcher with background updater kickstart.
+# Sandbox WeChat launcher: kicks the sync agent, then opens the managed copy.
+# The system /Applications/WeChat.app is launched separately by the user.
 set -euo pipefail
 
-ORIGINAL="$HOME/Applications/WeChat.app"
-CLONE="$HOME/Applications/WeChat2.app"
-SYSTEM_SOURCE="/Applications/WeChat.app"
+SANDBOX="$HOME/Applications/WeChat.app"
+SANDBOX_EXECUTABLE="WeChat2"
 STATE_FILE="$HOME/.wechat-dual-instance/state.env"
 LABEL="com.sillusion.wechat-dual-instance-updater"
 
-if [ ! -d "$ORIGINAL" ]; then
-    echo "ERROR: $ORIGINAL not found."
-    echo "Run install.sh first to create the managed WeChat app."
-    exit 1
-fi
-
-if [ ! -d "$CLONE" ]; then
-    echo "ERROR: $CLONE not found."
-    echo "Run install.sh first to create the isolated clone."
+if [ ! -d "$SANDBOX" ]; then
+    echo "ERROR: $SANDBOX 不存在。先跑 install.sh。"
     exit 1
 fi
 
@@ -27,47 +20,25 @@ if [ -f "$STATE_FILE" ]; then
     . "$STATE_FILE"
     case "${LAST_RESULT:-}" in
         postponed_running)
-            echo ">>> Sync is queued and will run after both WeChat instances exit."
+            echo ">>> 同步已排队，沙盒退出后会自动执行。"
             ;;
         synced)
-            echo ">>> Sync completed. Managed version: ${MANAGED_VERSION:-unknown}"
+            echo ">>> 沙盒已同步到最新版: ${MANAGED_VERSION:-unknown}"
             ;;
-        sync_needed|clone_rebuild_needed)
-            echo ">>> System WeChat differs from managed copy (system=${SYSTEM_VERSION:-?} managed=${MANAGED_VERSION:-?} clone=${CLONE_VERSION:-?}). Sync will run after both WeChat instances exit."
+        sync_needed)
+            echo ">>> 本机微信版本与沙盒不一致 (system=${SYSTEM_VERSION:-?} sandbox=${MANAGED_VERSION:-?})，沙盒退出后会自动同步。"
             ;;
     esac
 fi
 
-ORIG_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ORIGINAL/Contents/Info.plist" 2>/dev/null || echo "unknown")
-CLONE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CLONE/Contents/Info.plist" 2>/dev/null || echo "unknown")
-if [ "$ORIG_VERSION" != "$CLONE_VERSION" ]; then
-    echo "WARNING: clone version $CLONE_VERSION differs from original version $ORIG_VERSION."
-    echo "Background updater will rebuild the clone when WeChat is not running."
-    echo
-fi
-
-if ! pgrep -x WeChat1 >/dev/null 2>&1; then
-    open "$ORIGINAL"
-    sleep 2
-fi
-
-if ! pgrep -x WeChat2 >/dev/null 2>&1; then
-    open "$CLONE"
+if ! pgrep -x "$SANDBOX_EXECUTABLE" >/dev/null 2>&1; then
+    open "$SANDBOX"
     sleep 3
 fi
 
-INST1=$(pgrep -x WeChat1 2>/dev/null | wc -l | tr -d ' ')
-INST2=$(pgrep -x WeChat2 2>/dev/null | wc -l | tr -d ' ')
-echo ">>> WeChat1 instance(s): $INST1 — WeChat2 instance(s): $INST2"
-if [ "$INST1" -ge 1 ] && [ "$INST2" -ge 1 ]; then
-    echo ">>> Both managed WeChat instances are running. Scan QR codes as needed."
+COUNT=$(pgrep -x "$SANDBOX_EXECUTABLE" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$COUNT" -ge 1 ]; then
+    echo ">>> 沙盒微信已启动 (PID $(pgrep -x "$SANDBOX_EXECUTABLE" | head -1))"
 else
-    echo ">>> One or both instances failed to start. Check ~/.wechat-dual-instance/logs/update.log if a sync is in progress."
-fi
-
-if [ -d "$SYSTEM_SOURCE" ]; then
-    SYSTEM_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SYSTEM_SOURCE/Contents/Info.plist" 2>/dev/null || echo "unknown")
-    if [ "$SYSTEM_VERSION" != "$ORIG_VERSION" ]; then
-        echo ">>> Managed WeChat version is $ORIG_VERSION; system /Applications/WeChat.app remains $SYSTEM_VERSION."
-    fi
+    echo ">>> 沙盒未能启动。查看 ~/.wechat-dual-instance/logs/update.log"
 fi

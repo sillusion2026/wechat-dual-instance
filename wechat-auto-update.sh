@@ -1,14 +1,14 @@
 #!/bin/bash
-# Local sync updater: mirror /Applications/WeChat.app into ~/Applications and
-# rebuild WeChat2.app whenever the App Store (or user) refreshes the system
-# WeChat. No network, no DMG downloads, no codesign verification — relies on
-# Apple/Tencent's own update channel for the system binary.
+# Local sync updater for the sandbox WeChat.
+# Mirrors /Applications/WeChat.app into ~/Applications/WeChat.app whenever
+# the App Store (or user) refreshes the system binary. No network, no DMG
+# downloads — relies on the system's own update channel.
 set -euo pipefail
 
 SYSTEM_SOURCE="/Applications/WeChat.app"
 MANAGED_DIR="$HOME/Applications"
-ORIGINAL="$MANAGED_DIR/WeChat.app"
-CLONE="$MANAGED_DIR/WeChat2.app"
+SANDBOX="$MANAGED_DIR/WeChat.app"
+SANDBOX_EXECUTABLE="WeChat2"
 STATE_DIR="$HOME/.wechat-dual-instance"
 LOG_DIR="$STATE_DIR/logs"
 CACHE_DIR="$STATE_DIR/cache"
@@ -39,9 +39,9 @@ cleanup() {
 rollback_on_error() {
     local exit_code=$?
     if [ "$exit_code" -ne 0 ] && [ -n "$BACKUP_PATH" ] && [ -d "$BACKUP_PATH" ]; then
-        log "Sync failed. Restoring previous managed app from backup."
-        rm -rf "$ORIGINAL" >/dev/null 2>&1 || true
-        mv "$BACKUP_PATH" "$ORIGINAL" >/dev/null 2>&1 || true
+        log "Sync failed. Restoring previous sandbox app from backup."
+        rm -rf "$SANDBOX" >/dev/null 2>&1 || true
+        mv "$BACKUP_PATH" "$SANDBOX" >/dev/null 2>&1 || true
     fi
     return "$exit_code"
 }
@@ -90,71 +90,61 @@ write_state() {
 LAST_CHECK_TS=$(date +%s)
 SYSTEM_VERSION=$1
 MANAGED_VERSION=$2
-CLONE_VERSION=$3
-LAST_RESULT=$4
+LAST_RESULT=$3
 EOF
 }
 
 if [ ! -d "$SYSTEM_SOURCE" ]; then
     log "System WeChat not present at $SYSTEM_SOURCE. Nothing to sync."
-    write_state "0.0.0" "$(get_version "$ORIGINAL")" "$(get_version "$CLONE")" "system_missing"
+    write_state "0.0.0" "$(get_version "$SANDBOX")" "system_missing"
     exit 0
 fi
 
 system_version="$(get_version "$SYSTEM_SOURCE")"
-managed_version="$(get_version "$ORIGINAL")"
-clone_version="$(get_version "$CLONE")"
+managed_version="$(get_version "$SANDBOX")"
 
-needs_managed_sync=0
-if [ ! -d "$ORIGINAL" ]; then
-    needs_managed_sync=1
+needs_sync=0
+if [ ! -d "$SANDBOX" ]; then
+    needs_sync=1
 elif ! version_ge "$managed_version" "$system_version"; then
-    needs_managed_sync=1
+    needs_sync=1
 fi
 
-needs_clone_rebuild=0
-if [ ! -d "$CLONE" ] || [ "$clone_version" != "$system_version" ]; then
-    needs_clone_rebuild=1
-fi
-
-if [ "$needs_managed_sync" -eq 0 ] && [ "$needs_clone_rebuild" -eq 0 ]; then
-    log "Up to date: system=$system_version managed=$managed_version clone=$clone_version"
-    write_state "$system_version" "$managed_version" "$clone_version" "up_to_date"
+if [ "$needs_sync" -eq 0 ]; then
+    log "Up to date: system=$system_version sandbox=$managed_version"
+    write_state "$system_version" "$managed_version" "up_to_date"
     exit 0
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
-    if [ "$needs_managed_sync" -eq 1 ]; then
-        result="sync_needed"
-    else
-        result="clone_rebuild_needed"
-    fi
-    log "Check-only: system=$system_version managed=$managed_version clone=$clone_version → $result"
-    write_state "$system_version" "$managed_version" "$clone_version" "$result"
+    log "Check-only: system=$system_version sandbox=$managed_version → sync_needed"
+    write_state "$system_version" "$managed_version" "sync_needed"
     exit 0
 fi
 
-if pgrep -x "WeChat1" >/dev/null 2>&1 || pgrep -x "WeChat2" >/dev/null 2>&1; then
-    log "Managed WeChat running. Postpone. system=$system_version managed=$managed_version clone=$clone_version"
-    write_state "$system_version" "$managed_version" "$clone_version" "postponed_running"
+# Note: pgrep WeChat2 only — we intentionally do NOT block on the system
+# WeChat (executable name "WeChat") because the sync replaces the sandbox
+# bundle only, not /Applications/WeChat.app.
+if pgrep -x "$SANDBOX_EXECUTABLE" >/dev/null 2>&1; then
+    log "Sandbox WeChat running. Postpone. system=$system_version sandbox=$managed_version"
+    write_state "$system_version" "$managed_version" "postponed_running"
     exit 0
 fi
 
-if [ "$needs_managed_sync" -eq 1 ] && [ -d "$ORIGINAL" ]; then
+if [ -d "$SANDBOX" ]; then
     BACKUP_PATH="$CACHE_DIR/WeChat.app.backup.$(date +%s)"
-    log "Backing up current managed app to $BACKUP_PATH"
-    cp -R "$ORIGINAL" "$BACKUP_PATH"
+    log "Backing up current sandbox app to $BACKUP_PATH"
+    cp -R "$SANDBOX" "$BACKUP_PATH"
 fi
 
-log "Rebuilding managed instances via install.sh --skip-agent"
-bash "$INSTALL_SCRIPT" --skip-agent
+log "Rebuilding sandbox via install.sh --skip-agent --skip-autoquit"
+bash "$INSTALL_SCRIPT" --skip-agent --skip-autoquit
 
 if [ -n "$BACKUP_PATH" ]; then
     rm -rf "$BACKUP_PATH"
     BACKUP_PATH=""
 fi
 
-new_managed="$(get_version "$ORIGINAL")"
-new_clone="$(get_version "$CLONE")"
-write_state "$system_version" "$new_managed" "$new_clone" "synced"
-log "Sync complete: system=$system_version managed=$new_managed clone=$new_clone"
+new_managed="$(get_version "$SANDBOX")"
+write_state "$system_version" "$new_managed" "synced"
+log "Sync complete: system=$system_version sandbox=$new_managed"

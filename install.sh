@@ -1,15 +1,18 @@
 #!/bin/bash
-# One-click installer for WeChat dual-instance on macOS.
-# - Auto-quits running WeChat (with countdown, Ctrl-C aborts)
-# - Builds two managed copies with distinct bundle IDs (WeChat + 微信2)
+# One-click installer for WeChat sandbox on macOS.
+# - Auto-quits running sandbox WeChat (system /Applications/WeChat is untouched)
+# - Builds ONE managed copy at ~/Applications/WeChat.app
+#   * bundle id : com.tencent.xinWeChat2 (preserves any existing sandbox login)
+#   * executable: WeChat2 (distinct from system WeChat for clean pgrep)
+#   * display   : WeChat
 # - Registers a background sync agent (mirrors App Store upgrades)
-# - Registers a login auto-launch agent (starts both instances at login)
+# - Registers a login auto-launch agent (starts sandbox at login)
 set -euo pipefail
 
 SYSTEM_SOURCE="/Applications/WeChat.app"
 MANAGED_DIR="$HOME/Applications"
-ORIGINAL="$MANAGED_DIR/WeChat.app"
-CLONE="$MANAGED_DIR/WeChat2.app"
+SANDBOX="$MANAGED_DIR/WeChat.app"
+LEGACY_CLONE="$MANAGED_DIR/WeChat2.app"      # from older dual-managed setup
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPDATER_SCRIPT="$SCRIPT_DIR/wechat-auto-update.sh"
 SANDBOX_SCRIPT="$SCRIPT_DIR/wechat-sandbox.sh"
@@ -21,14 +24,18 @@ AUTOLAUNCH_AGENT="$LAUNCH_AGENTS_DIR/com.sillusion.wechat-dual-instance-autolaun
 STATE_DIR="$HOME/.wechat-dual-instance"
 LOG_DIR="$STATE_DIR/logs"
 
+SANDBOX_BUNDLE_ID="com.tencent.xinWeChat2"
+SANDBOX_EXECUTABLE="WeChat2"
+SANDBOX_DISPLAY="WeChat"
+
 SKIP_AGENT_SETUP=0
 SKIP_AUTOQUIT=0
 NO_AUTOSTART=0
 for arg in "$@"; do
     case "$arg" in
-        --skip-agent)   SKIP_AGENT_SETUP=1 ;;
+        --skip-agent)    SKIP_AGENT_SETUP=1 ;;
         --skip-autoquit) SKIP_AUTOQUIT=1 ;;
-        --no-autostart) NO_AUTOSTART=1 ;;
+        --no-autostart)  NO_AUTOSTART=1 ;;
     esac
 done
 
@@ -41,8 +48,6 @@ get_version() {
     fi
 }
 
-# Patch a freshly copied WeChat.app bundle to a distinct identity.
-# Args: bundle_path  bundle_id  executable_name  display_name
 patch_bundle() {
     local bundle="$1"
     local bid="$2"
@@ -63,7 +68,6 @@ patch_bundle() {
 }
 
 render_plist() {
-    # Substitute __SCRIPT_PATH__ and __LOG_PATH__ in a plist template.
     # Args: template_path  output_path  script_path  log_path
     python3 - "$1" "$2" "$3" "$4" <<'PY'
 from pathlib import Path
@@ -84,56 +88,48 @@ fi
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR" "$MANAGED_DIR"
 chmod +x "$UPDATER_SCRIPT" "$SANDBOX_SCRIPT"
 
-echo "=== WeChat Dual-Instance Installer (one-click) ==="
+echo "=== WeChat Sandbox Installer (one-click) ==="
 echo
 
-# --- auto-quit running WeChat -------------------------------------------------
+# --- auto-quit running sandbox WeChat (system WeChat NOT touched) -------------
 RUNNING=()
-for name in WeChat WeChat1 WeChat2; do
+for name in WeChat1 WeChat2; do
     if pgrep -x "$name" >/dev/null 2>&1; then
         RUNNING+=("$name")
     fi
 done
 
 if [ "${#RUNNING[@]}" -gt 0 ] && [ "$SKIP_AUTOQUIT" -eq 0 ]; then
-    echo ">>> 检测到运行中的微信进程: ${RUNNING[*]}"
-    echo ">>> 10 秒后将强制退出。按 Ctrl-C 中止安装。"
+    echo ">>> 检测到运行中的沙盒微信进程: ${RUNNING[*]}（本机 /Applications/WeChat.app 不受影响）"
+    echo ">>> 10 秒后将强制退出沙盒。按 Ctrl-C 中止安装。"
     for i in 10 9 8 7 6 5 4 3 2 1; do
         printf "\r    倒计时: %2d 秒 " "$i"
         sleep 1
     done
-    printf "\r    正在退出微信...        \n"
-    osascript -e 'tell application "WeChat" to quit' >/dev/null 2>&1 || true
+    printf "\r    正在退出沙盒微信...    \n"
+    pkill -TERM -x WeChat1 WeChat2 >/dev/null 2>&1 || true
     sleep 2
-    pkill -TERM -x WeChat WeChat1 WeChat2 >/dev/null 2>&1 || true
-    sleep 2
-    pkill -9 -x WeChat WeChat1 WeChat2 >/dev/null 2>&1 || true
+    pkill -9 -x WeChat1 WeChat2 >/dev/null 2>&1 || true
     sleep 1
 fi
 
-# --- rebuild managed copies from virgin system bundle -------------------------
+# --- rebuild the single sandbox copy ------------------------------------------
 SYSTEM_VERSION="$(get_version "$SYSTEM_SOURCE")"
 
-if [ -d "$ORIGINAL" ]; then
-    echo ">>> 删除旧的 $ORIGINAL ..."
-    rm -rf "$ORIGINAL"
+if [ -d "$SANDBOX" ]; then
+    echo ">>> 删除旧的 $SANDBOX ..."
+    rm -rf "$SANDBOX"
 fi
-if [ -d "$CLONE" ]; then
-    echo ">>> 删除旧的 $CLONE ..."
-    rm -rf "$CLONE"
+if [ -d "$LEGACY_CLONE" ]; then
+    echo ">>> 删除历史遗留的 $LEGACY_CLONE ..."
+    rm -rf "$LEGACY_CLONE"
 fi
 
-echo ">>> 复制 $SYSTEM_SOURCE → $ORIGINAL  (约 30 秒)..."
-cp -R "$SYSTEM_SOURCE" "$ORIGINAL"
+echo ">>> 复制 $SYSTEM_SOURCE → $SANDBOX  (约 30 秒)..."
+cp -R "$SYSTEM_SOURCE" "$SANDBOX"
 
-echo ">>> 复制 $SYSTEM_SOURCE → $CLONE     (约 30 秒)..."
-cp -R "$SYSTEM_SOURCE" "$CLONE"
-
-echo ">>> Patch 实例 1 → bundle=com.tencent.xinWeChat1 / exec=WeChat1 / 显示名=WeChat ..."
-patch_bundle "$ORIGINAL" "com.tencent.xinWeChat1" "WeChat1" "WeChat"
-
-echo ">>> Patch 实例 2 → bundle=com.tencent.xinWeChat2 / exec=WeChat2 / 显示名=微信2 ..."
-patch_bundle "$CLONE"    "com.tencent.xinWeChat2" "WeChat2" "微信2"
+echo ">>> Patch 沙盒 → bundle=$SANDBOX_BUNDLE_ID / exec=$SANDBOX_EXECUTABLE / 显示名=$SANDBOX_DISPLAY ..."
+patch_bundle "$SANDBOX" "$SANDBOX_BUNDLE_ID" "$SANDBOX_EXECUTABLE" "$SANDBOX_DISPLAY"
 
 # --- register background sync agent -------------------------------------------
 if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
@@ -155,15 +151,15 @@ fi
 # --- done ---------------------------------------------------------------------
 echo
 echo "=============== 部署完成 ==============="
-echo "系统微信 (未改动):  $SYSTEM_SOURCE  ($SYSTEM_VERSION, com.tencent.xinWeChat)"
-echo "实例 1 (主):       $ORIGINAL  ($(get_version "$ORIGINAL"), com.tencent.xinWeChat1, 显示名 WeChat)"
-echo "实例 2 (副):       $CLONE     ($(get_version "$CLONE"), com.tencent.xinWeChat2, 显示名 微信2)"
+echo "本机微信 (未改动):  $SYSTEM_SOURCE  ($SYSTEM_VERSION, com.tencent.xinWeChat, 显示名 微信)"
+echo "沙盒微信:          $SANDBOX  ($(get_version "$SANDBOX"), $SANDBOX_BUNDLE_ID, 显示名 $SANDBOX_DISPLAY)"
 if [ "$SKIP_AGENT_SETUP" -eq 0 ]; then
     echo "同步代理:          $UPDATER_AGENT"
     if [ "$NO_AUTOSTART" -eq 0 ]; then
-        echo "自启代理:          $AUTOLAUNCH_AGENT (下次登录会自动启动双开)"
+        echo "自启代理:          $AUTOLAUNCH_AGENT (下次登录自动启动沙盒)"
     fi
 fi
 echo "日志目录:          $LOG_DIR/"
 echo
-echo "现在立即启动:  bash $SANDBOX_SCRIPT"
+echo "现在立即启动沙盒:   bash $SANDBOX_SCRIPT"
+echo "本机微信照常用:     从 Dock / Spotlight 打开"
