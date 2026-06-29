@@ -47,10 +47,11 @@ bash install.sh
 
 仅此而已。`install.sh` 会自动：
 
-1. 检测正在运行的**沙盒**微信进程（如果有），10 秒倒计时后强制退出（**本机微信不受影响**）
-2. 从 `/Applications/WeChat.app` 复制一份到 `~/Applications/WeChat.app` 并 patch 成独立身份
-3. 注册后台同步代理（监听本机微信升级）
-4. 注册开机自启代理（下次登录起自动启动沙盒）
+1. 检测正在运行的**沙盒**微信进程（`WeChat1` / `WeChat2`），10 秒倒计时后强制退出（**本机 `/Applications/WeChat.app`（进程名 `WeChat`）不受影响**）
+2. 删掉旧的 `~/Applications/WeChat.app`，如果有旧版遗留的 `~/Applications/WeChat2.app` 也一并清理
+3. 从 `/Applications/WeChat.app` 完整复制到 `~/Applications/WeChat.app`，改 Bundle ID → `com.tencent.xinWeChat2`，改可执行文件 → `WeChat2`，改显示名 → `WeChat`，ad-hoc 重签名
+4. 注册后台同步代理 `com.sillusion.wechat-dual-instance-updater`（监听本机微信升级）
+5. 注册开机自启代理 `com.sillusion.wechat-dual-instance-autolaunch`（下次登录自动启动沙盒）
 
 完成提示：
 
@@ -70,6 +71,14 @@ bash wechat-sandbox.sh
 ```
 
 首次启动需要扫码登录沙盒账号。之后每次开机自动启动，本机微信也照常从 Dock 启动。
+
+沙盒启动后的输出示例：
+
+```
+>>> 沙盒微信已启动 (PID 30812)
+```
+
+如果沙盒已经在运行（比如自启代理已经拉起来了），再跑 `wechat-sandbox.sh` 不会重复启动，只是做一次同步状态检查。
 
 ---
 
@@ -178,6 +187,13 @@ launchctl kickstart -k gui/$(id -u)/com.sillusion.wechat-dual-instance-updater
 bash wechat-auto-update.sh
 ```
 
+仅检查不执行（dry-run）：
+
+```bash
+bash wechat-auto-update.sh --check-only
+cat ~/.wechat-dual-instance/state.env   # 查看结果
+```
+
 ### 看日志
 
 ```bash
@@ -196,9 +212,10 @@ bash uninstall.sh
 会清理：
 
 - `~/Applications/WeChat.app`（沙盒副本）
+- `~/Applications/WeChat2.app`（历史遗留，如果存在）
 - `~/Library/Containers/com.tencent.xinWeChat2`（沙盒数据）
-- 历史遗留的 `~/Library/Containers/com.tencent.xinWeChat1`（如果存在）
-- 两个 launchd 代理（同步 + 自启）
+- `~/Library/Containers/com.tencent.xinWeChat1`（历史遗留，如果存在）
+- 两个 launchd 代理（`com.sillusion.wechat-dual-instance-updater` + `com.sillusion.wechat-dual-instance-autolaunch`）
 - `~/.wechat-dual-instance/` 状态目录
 
 **完全不动** `/Applications/WeChat.app` 与主账号 `com.tencent.xinWeChat` 容器。
