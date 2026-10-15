@@ -78,7 +78,14 @@ sign_bundle() {
         fi
         echo "    ⚠️  证书签名失败，回退 ad-hoc 签名。"
     fi
-    codesign --force --deep -s - "$bundle" 2>/dev/null
+    # Do not let a signing failure trip `set -e` and abandon a half-built
+    # 1.3 GB copy with no explanation — report it and let the caller decide.
+    if ! codesign --force --deep -s - "$bundle" 2>/dev/null; then
+        echo "    ❌ ad-hoc 签名失败。沙盒副本可能不可用。"
+        echo "       可手动重试: codesign --force --deep -s - \"$bundle\""
+        return 1
+    fi
+    return 0
 }
 
 patch_bundle() {
@@ -259,7 +266,11 @@ echo ">>> 复制 $SYSTEM_SOURCE → $SANDBOX  (约 30 秒)..."
 cp -R "$SYSTEM_SOURCE" "$SANDBOX"
 
 echo ">>> Patch 沙盒 → bundle=$SANDBOX_BUNDLE_ID / exec=$SANDBOX_EXECUTABLE / 显示名=$SANDBOX_DISPLAY_ZH ..."
-patch_bundle "$SANDBOX" "$SANDBOX_BUNDLE_ID" "$SANDBOX_EXECUTABLE" "$SANDBOX_DISPLAY" "$SANDBOX_DISPLAY_ZH"
+if ! patch_bundle "$SANDBOX" "$SANDBOX_BUNDLE_ID" "$SANDBOX_EXECUTABLE" "$SANDBOX_DISPLAY" "$SANDBOX_DISPLAY_ZH"; then
+    echo "ERROR: 沙盒副本处理失败，正在清理以免留下半成品 ..."
+    rm -rf "$SANDBOX"
+    exit 1
+fi
 
 # Register the rebuilt bundle so Finder/Dock pick up the new display name.
 register_sandbox_launch_services

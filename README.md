@@ -35,15 +35,37 @@ macOS 上的 **微信 4.x 双开** 工具 —— 一条命令完成部署，本�
 | 权限 | 普通用户，不需要 sudo |
 | SIP | 可保持开启 |
 
+安装过程中可能出现的系统提示：
+
+| 提示 | 说明 |
+|---|---|
+| "终端想要控制 System Events" | 注册开机登录项需要，允许即可。拒绝也不影响自启——launchd 代理独立生效，仅少了"系统设置 → 登录项"里那一行 |
+| "无法打开，因为 Apple 无法检查其是否包含恶意软件" | 仅在副本带 `com.apple.quarantine` 时出现（例如系统微信来自 DMG）。右键 → 打开，或 `xattr -dr com.apple.quarantine ~/Applications/WeChat\ Sandbox.app` |
+
 ---
 
 ## 🚀 一键部署
+
+**方式 A — 下载 ZIP（推荐，无需任何开发工具）：**
+
+在仓库页面点 `Code → Download ZIP`，解压后进入目录：
+
+```bash
+cd ~/Downloads/wechat-dual-instance-main
+bash install.sh
+```
+
+**方式 B — git clone：**
 
 ```bash
 git clone https://github.com/sillusion2026/wechat-dual-instance.git
 cd wechat-dual-instance
 bash install.sh
 ```
+
+> ⚠️ **方式 B 需要 Xcode Command Line Tools。** macOS 自带的 `/usr/bin/git` 只是一个转发器，未安装 CLT 时会弹出"安装命令行开发者工具"对话框并中断。不想装 CLT 就用方式 A。
+
+> ⚠️ **安装完成后不要删除、移动或重命名这个目录。** 开机自启与后台同步两个 launchd 代理记录的是该目录下脚本的绝对路径，目录一旦变动，自启和自动升级会静默失效（沙盒本身仍在，但不再随本机微信升级）。需要换位置就先 `bash uninstall.sh`，移动后再 `bash install.sh`。
 
 仅此而已。`install.sh` 会自动：
 
