@@ -48,7 +48,18 @@ macOS 上的 **微信 4.x 双开** 工具 —— 一条命令完成部署，本�
 
 > **先读这条：这个目录就是安装位置本身。** `install.sh` 从自身所在目录推导路径，并把该路径写入两个开机代理。所以要把它放在一个**长期保留**的位置（如 `~/wechat-dual-instance`），不要放在 `~/Downloads`、`~/Desktop` 或 `/tmp` —— 装完再删除或移动，自启和自动升级会静默失效。
 
-**方式 A — 下载 ZIP（推荐，无需任何开发工具）：**
+**方式 A — git clone（推荐）：**
+
+```bash
+git clone https://github.com/sillusion2026/wechat-dual-instance.git ~/wechat-dual-instance
+cd ~/wechat-dual-instance
+bash install.sh
+```
+
+> 💡 如果提示"安装命令行开发者工具"：点**安装**，等它下载完成，然后重新执行上面的 `git clone` 即可。macOS 的 `git` 由 Xcode 命令行工具提供，第一次使用需要装一次。
+> 不想装：用下面的方式 B，全程不需要任何开发工具。
+
+**方式 B — 下载 ZIP（无需 git）：**
 
 在仓库页面点 `Code → Download ZIP`，解压后**移到固定位置**再安装：
 
@@ -57,16 +68,6 @@ mv ~/Downloads/wechat-dual-instance-main ~/wechat-dual-instance
 cd ~/wechat-dual-instance
 bash install.sh
 ```
-
-**方式 B — git clone：**
-
-```bash
-git clone https://github.com/sillusion2026/wechat-dual-instance.git ~/wechat-dual-instance
-cd ~/wechat-dual-instance
-bash install.sh
-```
-
-> ⚠️ **方式 B 需要 Xcode Command Line Tools。** macOS 自带的 `/usr/bin/git` 只是一个转发器，未安装 CLT 时会弹出"安装命令行开发者工具"对话框并中断。不想装 CLT 就用方式 A。方式 A 全程不需要任何开发工具。
 
 > ⚠️ **装好之后就不要动这个目录了。** 若确实需要换位置：先 `bash uninstall.sh`，移动目录，再在新位置 `bash install.sh`。直接 `mv` 会让两个代理指向不存在的脚本。
 
