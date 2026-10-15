@@ -3,14 +3,23 @@
 # The system /Applications/WeChat.app is launched separately by the user.
 set -euo pipefail
 
-SANDBOX="$HOME/Applications/WeChat.app"
+SANDBOX="$HOME/Applications/WeChat Sandbox.app"
+LEGACY_SANDBOX="$HOME/Applications/WeChat.app"
 SANDBOX_EXECUTABLE="WeChat2"
 STATE_FILE="$HOME/.wechat-dual-instance/state.env"
 LABEL="com.sillusion.wechat-dual-instance-updater"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 if [ ! -d "$SANDBOX" ]; then
     echo "ERROR: $SANDBOX 不存在。先跑 install.sh。"
     exit 1
+fi
+
+# Drop the old path from Launch Services, but only while it still exists:
+# lsregister -u fails with -10814 on a path already deleted, so there is
+# nothing useful to do once the bundle is gone.
+if [ -d "$LEGACY_SANDBOX" ]; then
+    "$LSREGISTER" -u "$LEGACY_SANDBOX" >/dev/null 2>&1 || true
 fi
 
 launchctl kickstart "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true

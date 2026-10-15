@@ -5,7 +5,7 @@ macOS 上的 **微信 4.x 双开** 工具 —— 一条命令完成部署，本�
 | 实例 | 显示名 | Bundle ID | 路径 | 启动方式 |
 |---|---|---|---|---|
 | 本机微信 | **微信** | `com.tencent.xinWeChat` | `/Applications/WeChat.app` | Dock / Spotlight 双击 |
-| 沙盒微信 | **WeChat** | `com.tencent.xinWeChat2` | `~/Applications/WeChat.app` | 开机自启 / `wechat-sandbox.sh` |
+| 沙盒微信 | **微信沙盒** | `com.tencent.xinWeChat2` | `~/Applications/WeChat Sandbox.app` | 开机自启 / `wechat-sandbox.sh` |
 
 沙盒副本独占自己的 sandbox container（`~/Library/Containers/com.tencent.xinWeChat2/`），与本机微信的登录态、聊天记录、文件完全互不可见。
 
@@ -48,8 +48,8 @@ bash install.sh
 仅此而已。`install.sh` 会自动：
 
 1. 检测正在运行的**沙盒**微信进程（`WeChat1` / `WeChat2`），10 秒倒计时后强制退出（**本机 `/Applications/WeChat.app`（进程名 `WeChat`）不受影响**）
-2. 删掉旧的 `~/Applications/WeChat.app`，如果有旧版遗留的 `~/Applications/WeChat2.app` 也一并清理
-3. 从 `/Applications/WeChat.app` 完整复制到 `~/Applications/WeChat.app`，改 Bundle ID → `com.tencent.xinWeChat2`，改可执行文件 → `WeChat2`，改显示名 → `WeChat`，ad-hoc 重签名
+2. 删掉旧的 `~/Applications/WeChat Sandbox.app`；若存在历史遗留的 `~/Applications/WeChat.app`、`~/Applications/WeChat2.app`，一并清理，并注销其在 Launch Services / 登录项里的残留记录
+3. 从 `/Applications/WeChat.app` 完整复制到 `~/Applications/WeChat Sandbox.app`，改写 Bundle ID → `com.tencent.xinWeChat2`、可执行文件 → `WeChat2`、显示名 → `微信沙盒`，再重签名
 4. 注册后台同步代理 `com.sillusion.wechat-dual-instance-updater`（监听本机微信升级）
 5. 注册开机自启代理 `com.sillusion.wechat-dual-instance-autolaunch`（下次登录自动启动沙盒）
 
@@ -58,7 +58,7 @@ bash install.sh
 ```
 =============== 部署完成 ===============
 本机微信 (未改动):  /Applications/WeChat.app  (4.1.8, com.tencent.xinWeChat, 显示名 微信)
-沙盒微信:          ~/Applications/WeChat.app  (4.1.8, com.tencent.xinWeChat2, 显示名 WeChat)
+沙盒微信:          ~/Applications/WeChat Sandbox.app  (4.1.8, com.tencent.xinWeChat2, 显示名 WeChat Sandbox)
 同步代理:          ~/Library/LaunchAgents/com.sillusion.wechat-dual-instance-updater.plist
 自启代理:          ~/Library/LaunchAgents/com.sillusion.wechat-dual-instance-autolaunch.plist
 日志目录:          ~/.wechat-dual-instance/logs/
@@ -99,11 +99,11 @@ bash wechat-sandbox.sh
 | 想要的实例 | 启动方式 |
 |---|---|
 | 本机微信（主账号 / 显示名 "微信"） | 从 Dock 或 Spotlight 双击微信图标 |
-| 沙盒微信（显示名 "WeChat"） | 开机自启已经拉起；或 `bash wechat-sandbox.sh`；或从 Finder 打开 `~/Applications/WeChat.app` |
+| 沙盒微信（显示名 "微信沙盒"） | 开机自启已经拉起；或 `bash wechat-sandbox.sh`；或从 Finder 打开 `~/Applications/WeChat Sandbox.app` |
 
 ### 把沙盒图标固定到 Dock
 
-打开 Finder → `Cmd+Shift+G` → 输入 `~/Applications` → 把 `WeChat.app` 拖到 Dock。之后 Dock 上能看到 **WeChat** 图标，双击即用。
+打开 Finder → `Cmd+Shift+G` → 输入 `~/Applications` → 把 `WeChat Sandbox.app` 拖到 Dock。之后 Dock 上能看到 **微信沙盒** 图标，双击即用。
 
 ### 退出开机自启
 
@@ -111,7 +111,7 @@ bash wechat-sandbox.sh
 
 **方式 A — 从系统设置关闭（推荐）：**
 
-打开 `系统设置 → 通用 → 登录项与扩展`，找到 `WeChat`，点一下然后点 `-` 移除。
+打开 `系统设置 → 通用 → 登录项与扩展`，找到 `微信沙盒`，点一下然后点 `-` 移除。
 
 **方式 B — 命令行：**
 
@@ -121,7 +121,7 @@ rm ~/Library/LaunchAgents/com.sillusion.wechat-dual-instance-autolaunch.plist
 osascript -e '
   tell application "System Events"
     try
-      delete (every login item whose path is "'"$HOME"'/Applications/WeChat.app")
+      delete (every login item whose path is "'"$HOME"'/Applications/WeChat Sandbox.app")
     end try
   end tell' 2>/dev/null
 ```
@@ -225,7 +225,8 @@ bash uninstall.sh
 
 会清理：
 
-- `~/Applications/WeChat.app`（沙盒副本）
+- `~/Applications/WeChat Sandbox.app`（沙盒副本）
+- `~/Applications/WeChat.app`（历史遗留路径，如果存在）
 - `~/Applications/WeChat2.app`（历史遗留，如果存在）
 - `~/Library/Containers/com.tencent.xinWeChat2`（沙盒数据）
 - `~/Library/Containers/com.tencent.xinWeChat1`（历史遗留，如果存在）
@@ -244,7 +245,7 @@ bash uninstall.sh
 ps -axo pid,command | grep -E '/WeChat2( |$)' | grep -v grep | grep -v Helper
 ```
 
-期望看到一行 `~/Applications/WeChat.app/Contents/MacOS/WeChat2`。如果没有：
+期望看到一行 `~/Applications/WeChat Sandbox.app/Contents/MacOS/WeChat2`。如果没有：
 ```bash
 tail -50 ~/.wechat-dual-instance/logs/update.log
 bash install.sh
@@ -293,20 +294,22 @@ launchctl kickstart -k gui/$(id -u)/com.sillusion.wechat-dual-instance-updater
 
 WeChat 4.x 通过 `CFBundleIdentifier` 检测"是否存在同款实例"。本工具让沙盒副本有不同的 Bundle ID：
 
-1. 把 `/Applications/WeChat.app` 完整复制一份到 `~/Applications/WeChat.app`
+1. 把 `/Applications/WeChat.app` 完整复制一份到 `~/Applications/WeChat Sandbox.app`
 2. 改写副本的 `CFBundleIdentifier` 为 `com.tencent.xinWeChat2`（与本机的 `com.tencent.xinWeChat` 不同）
 3. 改写 `CFBundleExecutable` 为 `WeChat2`（防止微信通过进程名检测）
-4. 改写 `CFBundleDisplayName` 为 `WeChat`（Dock/Finder 显示用）
-5. 移除原 Tencent 签名，重新做 ad-hoc 签名
-6. macOS 看到两个不同 Bundle ID 的安装，自动分别分配 sandbox container
+4. 改写 `CFBundleDisplayName` 为 `微信沙盒`（本地化后的 Dock/Finder 显示名，`en`/`Base` 为 `WeChat Sandbox`）
+5. 同步改写内嵌组件（`WeChatAppEx` 及其 4 个 Helper、`WeChatFileProviderExtension`、`WeChatMacShare`）的 Bundle ID，避免与主实例的嵌套组件冲突
+6. 移除 `CFBundleURLTypes`（否则沙盒副本会注册同一套 URL scheme，与本机微信抢占）
+7. 移除原 Tencent 签名后重签名：有 Apple Development 证书就用它，否则回退 ad-hoc
+8. macOS 看到两个不同 Bundle ID 的安装，自动分别分配 sandbox container
 
 ```
-+---------------------------+    cp -R + patch + sign    +-------------------------+
-| /Applications/WeChat.app  | --------------------------> | ~/Applications/WeChat.app|
-| com.tencent.xinWeChat     |                             | com.tencent.xinWeChat2  |
-| Dock 显示：微信            |                             | Dock 显示：WeChat        |
-| 进程名：WeChat             |                             | 进程名：WeChat2         |
-+---------------------------+                             +-------------------------+
++-------------------------------+    cp -R + patch + sign    +------------------------------------+
+| /Applications/WeChat.app      | --------------------------> | ~/Applications/WeChat Sandbox.app  |
+| com.tencent.xinWeChat         |                             | com.tencent.xinWeChat2             |
+| Dock 显示：微信                |                             | Dock 显示：微信沙盒                 |
+| 进程名：WeChat                 |                             | 进程名：WeChat2                     |
++-------------------------------+                             +------------------------------------+
         |
         | (Info.plist 变化 → WatchPaths 秒级触发)
         +--> wechat-auto-update.sh --> 重新同步沙盒
@@ -318,7 +321,7 @@ WeChat 4.x 通过 `CFBundleIdentifier` 检测"是否存在同款实例"。本工
 
 | 文件 | 作用 |
 |---|---|
-| `install.sh` | 一键部署：复制 + patch + 注册两个 launchd 代理 |
+| `install.sh` | 一键部署：复制 + patch + 重签名 + 注册两个 launchd 代理 |
 | `wechat-sandbox.sh` | 启动沙盒微信 + 唤起同步检查 |
 | `wechat-auto-update.sh` | 后台同步代理：本机微信变化时调用 install.sh 重建沙盒 |
 | `com.sillusion.wechat-dual-instance-updater.plist.template` | 同步代理 launchd 配置（RunAtLoad + 1h + WatchPaths） |
@@ -332,7 +335,7 @@ WeChat 4.x 通过 `CFBundleIdentifier` 检测"是否存在同款实例"。本工
 - 不修改系统目录：仅写入 `~/Applications/`、`~/Library/`、`~/.wechat-dual-instance/`
 - 不需要 sudo
 - 不联网：脚本本身从不发起任何网络请求
-- 仅对沙盒副本做 ad-hoc 重签名，本机微信签名链完整保留
+- 仅对沙盒副本重签名（优先 Apple Development 证书，缺失时回退 ad-hoc），本机微信签名链完整保留
 - 可审计：所有逻辑约 300 行 shell 脚本
 
 ---
@@ -341,7 +344,8 @@ WeChat 4.x 通过 `CFBundleIdentifier` 检测"是否存在同款实例"。本工
 
 | 限制 | 说明 |
 |---|---|
-| 沙盒里部分小程序无法运行 | ad-hoc 签名移除了某些 entitlements，在本机微信使用即可 |
+| 沙盒里部分小程序无法运行 | 重签名后部分 entitlements 失效，在本机微信使用即可 |
+| 沙盒 Dock 角标（未读消息数）不显示 | ad-hoc 签名无 TeamID，macOS 26 拒绝此类应用的通知/角标权限。修复：安装 Xcode 并用 Apple ID 登录生成 Apple Development 证书，再跑 `bash install.sh` 重装沙盒，脚本会自动改用证书签名；本机微信不受影响 |
 | 仅支持 1 个沙盒 | 如需更多沙盒，可手动复制 install.sh 修改 bundle id 再 patch 一份 |
 | 不支持微信 3.x | Bundle ID 检测逻辑不同，请升级 4.x |
 

@@ -1,13 +1,13 @@
 #!/bin/bash
 # Local sync updater for the sandbox WeChat.
-# Mirrors /Applications/WeChat.app into ~/Applications/WeChat.app whenever
+# Mirrors /Applications/WeChat.app into ~/Applications/WeChat Sandbox.app whenever
 # the App Store (or user) refreshes the system binary. No network, no DMG
 # downloads — relies on the system's own update channel.
 set -euo pipefail
 
 SYSTEM_SOURCE="/Applications/WeChat.app"
 MANAGED_DIR="$HOME/Applications"
-SANDBOX="$MANAGED_DIR/WeChat.app"
+SANDBOX="$MANAGED_DIR/WeChat Sandbox.app"
 SANDBOX_EXECUTABLE="WeChat2"
 STATE_DIR="$HOME/.wechat-dual-instance"
 LOG_DIR="$STATE_DIR/logs"

@@ -5,13 +5,24 @@
 set -euo pipefail
 
 MANAGED_DIR="$HOME/Applications"
-SANDBOX="$MANAGED_DIR/WeChat.app"
+SANDBOX="$MANAGED_DIR/WeChat Sandbox.app"
+LEGACY_SANDBOX="$MANAGED_DIR/WeChat.app"
 LEGACY_CLONE="$MANAGED_DIR/WeChat2.app"
 CONTAINER1="$HOME/Library/Containers/com.tencent.xinWeChat1"  # legacy
 CONTAINER2="$HOME/Library/Containers/com.tencent.xinWeChat2"  # current sandbox
 STATE_DIR="$HOME/.wechat-dual-instance"
 UPDATER_AGENT="$HOME/Library/LaunchAgents/com.sillusion.wechat-dual-instance-updater.plist"
 AUTOLAUNCH_AGENT="$HOME/Library/LaunchAgents/com.sillusion.wechat-dual-instance-autolaunch.plist"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+# lsregister -u only works while the bundle is still on disk (-10814
+# otherwise), so every unregister must run before its rm -rf.
+unregister_bundle() {
+    local path="$1"
+    if [ -d "$path" ]; then
+        "$LSREGISTER" -u "$path" >/dev/null 2>&1 || true
+    fi
+}
 
 remove_container() {
     local path="$1"
@@ -45,12 +56,30 @@ osascript -e "
     try
       delete (every login item whose path is \"$SANDBOX\")
     end try
+    try
+      delete (every login item whose path is \"$LEGACY_SANDBOX\")
+    end try
+    try
+      delete (every login item whose path is \"$LEGACY_CLONE\")
+    end try
   end tell" >/dev/null 2>&1 || true
+echo "    完成。"
+
+echo ">>> 注销 Launch Services 注册 ..."
+unregister_bundle "$SANDBOX"
+unregister_bundle "$LEGACY_SANDBOX"
+unregister_bundle "$LEGACY_CLONE"
 echo "    完成。"
 
 if [ -d "$SANDBOX" ]; then
     echo ">>> 删除 $SANDBOX ..."
     rm -rf "$SANDBOX"
+    echo "    完成。"
+fi
+
+if [ -d "$LEGACY_SANDBOX" ]; then
+    echo ">>> 删除历史遗留 $LEGACY_SANDBOX ..."
+    rm -rf "$LEGACY_SANDBOX"
     echo "    完成。"
 fi
 
