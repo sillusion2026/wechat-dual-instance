@@ -213,6 +213,28 @@ if [ ! -d "$SYSTEM_SOURCE" ]; then
     exit 1
 fi
 
+# This directory IS the install location: its absolute path gets baked into
+# both launchd agents, so a throwaway location silently breaks auto-launch
+# and auto-sync later. Warn now rather than let the user discover it.
+case "$SCRIPT_DIR" in
+    "$HOME/Downloads"/*|"$HOME/Desktop"/*|/tmp/*|/var/folders/*)
+        echo "⚠️  警告: 当前目录位于临时/易清理位置："
+        echo "    $SCRIPT_DIR"
+        echo "    安装后两个开机代理会指向这里，目录一旦被删除或清理，"
+        echo "    自动启动与自动升级会静默失效。"
+        echo
+        echo "    建议先移到固定位置再安装，例如："
+        echo "        mv \"$SCRIPT_DIR\" \"\$HOME/wechat-dual-instance\""
+        echo "        cd \"\$HOME/wechat-dual-instance\" && bash install.sh"
+        echo
+        if [ -t 0 ]; then
+            printf "    仍要继续安装？按 Ctrl-C 取消，或 10 秒后自动继续 ... "
+            sleep 10
+            echo
+        fi
+        ;;
+esac
+
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR" "$CACHE_DIR" "$MANAGED_DIR"
 chmod +x "$UPDATER_SCRIPT" "$SANDBOX_SCRIPT"
 

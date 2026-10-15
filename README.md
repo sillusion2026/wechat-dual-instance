@@ -46,26 +46,29 @@ macOS 上的 **微信 4.x 双开** 工具 —— 一条命令完成部署，本�
 
 ## 🚀 一键部署
 
+> **先读这条：这个目录就是安装位置本身。** `install.sh` 从自身所在目录推导路径，并把该路径写入两个开机代理。所以要把它放在一个**长期保留**的位置（如 `~/wechat-dual-instance`），不要放在 `~/Downloads`、`~/Desktop` 或 `/tmp` —— 装完再删除或移动，自启和自动升级会静默失效。
+
 **方式 A — 下载 ZIP（推荐，无需任何开发工具）：**
 
-在仓库页面点 `Code → Download ZIP`，解压后进入目录：
+在仓库页面点 `Code → Download ZIP`，解压后**移到固定位置**再安装：
 
 ```bash
-cd ~/Downloads/wechat-dual-instance-main
+mv ~/Downloads/wechat-dual-instance-main ~/wechat-dual-instance
+cd ~/wechat-dual-instance
 bash install.sh
 ```
 
 **方式 B — git clone：**
 
 ```bash
-git clone https://github.com/sillusion2026/wechat-dual-instance.git
-cd wechat-dual-instance
+git clone https://github.com/sillusion2026/wechat-dual-instance.git ~/wechat-dual-instance
+cd ~/wechat-dual-instance
 bash install.sh
 ```
 
-> ⚠️ **方式 B 需要 Xcode Command Line Tools。** macOS 自带的 `/usr/bin/git` 只是一个转发器，未安装 CLT 时会弹出"安装命令行开发者工具"对话框并中断。不想装 CLT 就用方式 A。
+> ⚠️ **方式 B 需要 Xcode Command Line Tools。** macOS 自带的 `/usr/bin/git` 只是一个转发器，未安装 CLT 时会弹出"安装命令行开发者工具"对话框并中断。不想装 CLT 就用方式 A。方式 A 全程不需要任何开发工具。
 
-> ⚠️ **安装完成后不要删除、移动或重命名这个目录。** 开机自启与后台同步两个 launchd 代理记录的是该目录下脚本的绝对路径，目录一旦变动，自启和自动升级会静默失效（沙盒本身仍在，但不再随本机微信升级）。需要换位置就先 `bash uninstall.sh`，移动后再 `bash install.sh`。
+> ⚠️ **装好之后就不要动这个目录了。** 若确实需要换位置：先 `bash uninstall.sh`，移动目录，再在新位置 `bash install.sh`。直接 `mv` 会让两个代理指向不存在的脚本。
 
 仅此而已。`install.sh` 会自动：
 
@@ -256,6 +259,8 @@ bash uninstall.sh
 - `~/.wechat-dual-instance/` 状态目录
 
 **完全不动** `/Applications/WeChat.app` 与主账号 `com.tencent.xinWeChat` 容器。
+
+卸载完成后，本仓库目录就不再被任何东西引用了，可以随意删除或移动；想再用时重新跑 `install.sh` 即可。
 
 ---
 
